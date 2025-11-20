@@ -1,0 +1,202 @@
+This website acts like a digital xerox + stationery service for engineering students.
+It should be simple, clean, responsive, and professional.
+Use HTML, CSS, JavaScript and a basic backend using Node.js + Express.
+You can use Bootstrap for styling.
+Keep the code clean and easy to run in Replit.
+
+Website Requirements & Features
+1. Home Page
+
+Title: Campus Print Delivery – Upload. Print. Deliver.
+
+Brief description of the service:
+“Students upload PDFs → we send them to a less-crowded Xerox shop →
+we print → we deliver inside college based on USN, class, semester.”
+
+A button: Upload Printout
+
+2. PDF Upload Form Page
+
+Create a front-end form with the following fields:
+
+Student Details
+
+Student Name
+
+College Name
+
+USN
+
+Department / Branch
+
+Semester
+
+Class (A/B/C etc.)
+
+Year
+
+Upload Section
+
+Upload PDF (multiple files allowed)
+
+Dropdown: Print Type
+
+Black & White (₹3 per page)
+
+Color (₹11 per page)
+
+Page Options
+
+Number of copies
+
+Print sides (Single side / Double side)
+
+Additional options (checkboxes):
+
+Stapling
+
+Spiral binding
+
+Graph sheet printing
+
+Record sheet printing
+
+Fast Delivery (₹5 extra)
+
+Express Delivery (₹10 extra)
+
+3. Pricing Logic
+
+Normal shop printing cost:
+
+B&W = ₹2
+
+Color = ₹10
+
+Student price:
+
+B&W = ₹3
+
+Color = ₹11
+
+Extra services:
+
+Fast Delivery: ₹5
+
+Express Delivery: ₹10
+
+Spiral binding: ₹20
+
+Stapling: ₹2
+
+The backend should calculate total cost based on pages × rate + extras and display the final bill on screen.
+
+4. Automatic Routing
+
+When a PDF is uploaded, simulate backend logic to:
+
+“Send file to less-crowded shop”
+(For MVP, create a mock function like assignShop() which picks from 3 shops based on simulated queue.)
+
+Example shops:
+
+"TechPrint Xerox – Queue: 2"
+
+"SmartCopy Center – Queue: 5"
+
+"QuickPrint Hub – Queue: 1"
+
+Choose the shop with lowest queue and show:
+“Your file has been sent to: QuickPrint Hub”
+
+5. Order Confirmation Page
+
+Show:
+
+Student details
+
+File name
+
+Print type
+
+Total amount
+
+Assigned shop
+
+Expected delivery time (Normal: 2 hours, Fast: 1 hour, Express: 30 min)
+
+Add a button: Download Order Receipt (HTML page / PDF)
+
+6. Admin Page (Simple)
+
+Create a backend route /admin that shows:
+
+List of all print orders
+
+Student name, USN
+
+Pages
+
+Print type
+
+Assigned shop
+
+Status dropdown: Pending / Printing / Delivered
+
+Button to update status
+
+7. Technical Requirements
+
+Use Node.js + Express
+
+Save uploads to a /uploads folder
+
+Use multer for file upload
+
+Use Bootstrap for UI
+
+Use local JSON or array to simulate a database
+
+Add comments for all major functions
+
+Keep everything ready to run inside Replit
+
+8. Extra Features
+
+Add these optional features if possible:
+
+Dark mode toggle
+
+Order tracking page: /track?usn=xxxxx
+
+Stationery items order section (Pens, A4 sheets, covers)
+
+Contact form
+
+About us page
+
+9. Final Output
+
+I need:
+
+A working full-stack MVP website
+
+Perfect UI
+
+Functional upload, pricing, assignment, confirmation
+
+Admin dashboard
+
+Simple mock-database
+
+Ready to run inside Replit
+
+Clean folder structure:
+
+/public
+
+/views
+
+server.js
+
+package.json
