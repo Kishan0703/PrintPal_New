@@ -46,9 +46,21 @@ app.use((req, res, next) => {
   next();
 });
 
-(async () => {
-  const server = await registerRoutes(app);
+// Register routes and prepare server/app for either local run or serverless environments.
+let serverPromise: Promise<import("http").Server> | undefined;
+export async function getApp() {
+  // ensure routes are registered once
+  if (!serverPromise) {
+    serverPromise = registerRoutes(app);
+  }
+  // registerRoutes attaches routes to `app`; return the express app instance
+  await serverPromise;
+  return app;
+}
 
+// Attach a global error handler after routes are registered.
+async function attachErrorHandler() {
+  await getApp();
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
@@ -56,26 +68,30 @@ app.use((req, res, next) => {
     res.status(status).json({ message });
     throw err;
   });
+}
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  if (app.get("env") === "development") {
-    await setupVite(app, server);
-  } else {
-    serveStatic(app);
-  }
+attachErrorHandler().catch((e) => {
+  console.error("Failed to register routes/error handler:", e);
+});
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || '5000', 10);
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
-  });
-})();
+// If not running in a serverless environment (like Vercel) start the HTTP server.
+if (!process.env.VERCEL) {
+  (async () => {
+    const server = await serverPromise!;
+
+    // only setup vite in development (local) and after setting up routes
+    if (app.get("env") === "development") {
+      await setupVite(app, server as any);
+    } else {
+      serveStatic(app);
+    }
+
+    const port = parseInt(process.env.PORT || '5000', 10);
+    server.listen({
+      port,
+      host: "0.0.0.0",
+    }, () => {
+      log(`serving on port ${port}`);
+    });
+  })();
+}
