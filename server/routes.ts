@@ -124,38 +124,118 @@ function calculateExpectedDeliveryTime(deliverySpeed: "normal" | "fast" | "expre
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  app.post("/api/orders", upload.array("files"), async (req, res) => {
+  // Accept both multipart/form-data uploads (handled by multer) and
+  // JSON payloads where files have been pre-uploaded (e.g. to S3).
+  app.post("/api/orders", async (req, res) => {
     try {
-      const files = req.files as Express.Multer.File[];
-      
-      if (!files || files.length === 0) {
-        return res.status(400).send("No files uploaded");
+      const contentType = req.headers["content-type"] || "";
+
+      // If request is multipart, use multer to process files
+      if (typeof contentType === "string" && contentType.startsWith("multipart/form-data")) {
+        upload.array("files")(
+          req as any,
+          res as any,
+          async (err: any) => {
+            if (err) {
+              console.error("Multer error:", err);
+              return res.status(400).send(err.message || "File upload error");
+            }
+
+            const files = (req as any).files as Express.Multer.File[];
+            if (!files || files.length === 0) {
+              return res.status(400).send("No files uploaded");
+            }
+
+            const rawData = {
+              studentName: req.body.studentName,
+              collegeName: req.body.collegeName,
+              usn: req.body.usn?.toUpperCase(),
+              department: req.body.department,
+              semester: req.body.semester,
+              class: req.body.class,
+              year: req.body.year,
+              printType: req.body.printType,
+              copies: parseInt(req.body.copies) || 1,
+              sides: req.body.sides,
+              pageCount: parseInt(req.body.pageCount) || 1,
+              stapling: req.body.stapling === "true",
+              spiralBinding: req.body.spiralBinding === "true",
+              graphSheet: req.body.graphSheet === "true",
+              recordSheet: req.body.recordSheet === "true",
+              deliverySpeed: req.body.deliverySpeed || "normal",
+            };
+
+            const fileNames = files.map((f) => f.originalname);
+            const filePaths = files.map((f) => f.filename);
+
+            const { shop, queue } = await assignShop();
+
+            const pricing = calculatePricing(
+              rawData.pageCount,
+              rawData.printType as "bw" | "color",
+              rawData.copies,
+              rawData.sides as "single" | "double",
+              rawData.stapling,
+              rawData.spiralBinding,
+              rawData.graphSheet,
+              rawData.recordSheet,
+              rawData.deliverySpeed as "normal" | "fast" | "express"
+            );
+
+            const expectedDeliveryTime = calculateExpectedDeliveryTime(
+              rawData.deliverySpeed as "normal" | "fast" | "express"
+            );
+
+            const orderData: InsertOrder = {
+              ...rawData,
+              fileNames,
+              filePaths,
+              subtotal: pricing.subtotal,
+              extras: pricing.extras,
+              total: pricing.total,
+              assignedShop: shop,
+              shopQueue: queue,
+              status: "pending",
+              expectedDeliveryTime,
+            };
+
+            const order = await storage.createOrder(orderData);
+            return res.json(order);
+          },
+        );
+        return;
       }
-      
+
+      // Otherwise expect JSON body with filePaths already uploaded (e.g. directly to S3)
+      const body = req.body as any;
+      if (!body) {
+        return res.status(400).send("Missing request body");
+      }
+
       const rawData = {
-        studentName: req.body.studentName,
-        collegeName: req.body.collegeName,
-        usn: req.body.usn?.toUpperCase(),
-        department: req.body.department,
-        semester: req.body.semester,
-        class: req.body.class,
-        year: req.body.year,
-        printType: req.body.printType,
-        copies: parseInt(req.body.copies) || 1,
-        sides: req.body.sides,
-        pageCount: parseInt(req.body.pageCount) || 1,
-        stapling: req.body.stapling === "true",
-        spiralBinding: req.body.spiralBinding === "true",
-        graphSheet: req.body.graphSheet === "true",
-        recordSheet: req.body.recordSheet === "true",
-        deliverySpeed: req.body.deliverySpeed || "normal",
+        studentName: body.studentName,
+        collegeName: body.collegeName,
+        usn: body.usn?.toUpperCase(),
+        department: body.department,
+        semester: body.semester,
+        class: body.class,
+        year: body.year,
+        printType: body.printType,
+        copies: parseInt(body.copies) || 1,
+        sides: body.sides,
+        pageCount: parseInt(body.pageCount) || 1,
+        stapling: body.stapling === true || body.stapling === "true",
+        spiralBinding: body.spiralBinding === true || body.spiralBinding === "true",
+        graphSheet: body.graphSheet === true || body.graphSheet === "true",
+        recordSheet: body.recordSheet === true || body.recordSheet === "true",
+        deliverySpeed: body.deliverySpeed || "normal",
       };
-      
-      const fileNames = files.map((f) => f.originalname);
-      const filePaths = files.map((f) => f.filename);
-      
+
+      const fileNames: string[] = Array.isArray(body.fileNames) ? body.fileNames : [];
+      const filePaths: string[] = Array.isArray(body.filePaths) ? body.filePaths : [];
+
       const { shop, queue } = await assignShop();
-      
+
       const pricing = calculatePricing(
         rawData.pageCount,
         rawData.printType as "bw" | "color",
@@ -167,11 +247,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         rawData.recordSheet,
         rawData.deliverySpeed as "normal" | "fast" | "express"
       );
-      
+
       const expectedDeliveryTime = calculateExpectedDeliveryTime(
         rawData.deliverySpeed as "normal" | "fast" | "express"
       );
-      
+
       const orderData: InsertOrder = {
         ...rawData,
         fileNames,
@@ -184,9 +264,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: "pending",
         expectedDeliveryTime,
       };
-      
+
       const order = await storage.createOrder(orderData);
-      
       res.json(order);
     } catch (error) {
       console.error("Error creating order:", error);

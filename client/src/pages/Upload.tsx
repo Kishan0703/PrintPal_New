@@ -42,6 +42,9 @@ export default function Upload() {
   
   const createOrderMutation = useMutation({
     mutationFn: async (formData: FormData) => {
+      // This mutation receives a FormData when running locally or when
+      // direct uploads are not configured. However, when S3 presigning is
+      // available we use a different flow (handled in handleSubmit).
       const response = await fetch("/api/orders", {
         method: "POST",
         body: formData,
@@ -74,31 +77,110 @@ export default function Upload() {
   };
   
   const handleSubmit = async () => {
-    const formData = new FormData();
-    
-    formData.append("studentName", studentName);
-    formData.append("collegeName", collegeName);
-    formData.append("usn", usn);
-    formData.append("department", department);
-    formData.append("semester", semester);
-    formData.append("class", classSection);
-    formData.append("year", year);
-    
-    files.forEach((file) => {
-      formData.append("files", file);
-    });
-    
-    formData.append("printType", printType);
-    formData.append("copies", copies.toString());
-    formData.append("sides", sides);
-    formData.append("pageCount", pageCount.toString());
-    formData.append("stapling", stapling.toString());
-    formData.append("spiralBinding", spiralBinding.toString());
-    formData.append("graphSheet", graphSheet.toString());
-    formData.append("recordSheet", recordSheet.toString());
-    formData.append("deliverySpeed", deliverySpeed);
-    
-    createOrderMutation.mutate(formData);
+    // If the deployment config provides a presign endpoint and S3
+    // credentials, we'll upload files directly to S3 and then send a
+    // JSON payload with file keys to avoid serverless body-size limits.
+    try {
+      const uploadedKeys: string[] = [];
+      const uploadedNames: string[] = [];
+
+      if (files.length > 0) {
+        for (const file of files) {
+          // request presign URL
+          const presignRes = await fetch('/api/presign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename: file.name, contentType: file.type || 'application/pdf' }),
+          });
+
+          if (!presignRes.ok) {
+            // presign not available; fallback to multipart form submission
+            throw new Error('presign-unavailable');
+          }
+
+          const { url, key } = await presignRes.json();
+          // upload file directly to S3 using PUT
+          const putRes = await fetch(url, {
+            method: 'PUT',
+            headers: { 'Content-Type': file.type || 'application/pdf' },
+            body: file,
+          });
+
+          if (!putRes.ok) {
+            throw new Error('Failed to upload file to storage');
+          }
+
+          uploadedKeys.push(key);
+          uploadedNames.push(file.name);
+        }
+      }
+
+      // send order metadata as JSON referencing uploaded keys
+      const payload = {
+        studentName,
+        collegeName,
+        usn,
+        department,
+        semester,
+        class: classSection,
+        year,
+        printType,
+        copies,
+        sides,
+        pageCount,
+        stapling,
+        spiralBinding,
+        graphSheet,
+        recordSheet,
+        deliverySpeed,
+        fileNames: uploadedNames,
+        filePaths: uploadedKeys,
+      };
+
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+
+      const data = await res.json();
+      // reuse onSuccess behavior
+      createOrderMutation.reset();
+      createOrderMutation.onSuccess?.(data as any);
+    } catch (err: any) {
+      if (String(err.message || err) === 'presign-unavailable') {
+        // fallback to previous FormData/multipart flow
+        const formData = new FormData();
+
+        formData.append('studentName', studentName);
+        formData.append('collegeName', collegeName);
+        formData.append('usn', usn);
+        formData.append('department', department);
+        formData.append('semester', semester);
+        formData.append('class', classSection);
+        formData.append('year', year);
+
+        files.forEach((file) => formData.append('files', file));
+
+        formData.append('printType', printType);
+        formData.append('copies', copies.toString());
+        formData.append('sides', sides);
+        formData.append('pageCount', pageCount.toString());
+        formData.append('stapling', stapling.toString());
+        formData.append('spiralBinding', spiralBinding.toString());
+        formData.append('graphSheet', graphSheet.toString());
+        formData.append('recordSheet', recordSheet.toString());
+        formData.append('deliverySpeed', deliverySpeed);
+
+        createOrderMutation.mutate(formData);
+      } else {
+        createOrderMutation.onError?.(err as Error);
+      }
+    }
   };
   
   const canProceed = () => {
